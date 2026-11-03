@@ -1,0 +1,9 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent scrolling since it's a full-screen game app */
+}
+
+* {
+  box-sizing: border-box;
+}
