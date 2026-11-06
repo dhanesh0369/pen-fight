@@ -6,6 +6,10 @@ import uuid
 
 app = FastAPI()
 
+# Pen types the client knows how to render/simulate (see frontend/src/game/pens.ts)
+VALID_PEN_TYPES = {"ballpoint", "marker", "gel"}
+DEFAULT_PEN_TYPE = "ballpoint"
+
 # Allow frontend to connect
 app.add_middleware(
     CORSMiddleware,
@@ -23,20 +27,22 @@ class ConnectionManager:
         # Maps game_id -> game state
         self.game_states: Dict[str, dict] = {}
 
-    async def connect(self, websocket: WebSocket, game_id: str):
+    async def connect(self, websocket: WebSocket, game_id: str, pen_type: str = DEFAULT_PEN_TYPE):
         await websocket.accept()
         if game_id not in self.active_games:
             self.active_games[game_id] = []
             self.game_states[game_id] = {
                 "players": [],
                 "turn": 1,
-                "is_moving": False
+                "is_moving": False,
+                "pens": {}
             }
         
         # Max 2 players per game for now
         if len(self.active_games[game_id]) < 2:
             self.active_games[game_id].append(websocket)
             player_num = len(self.active_games[game_id])
+            self.game_states[game_id]["pens"][str(player_num)] = pen_type
             
             # Send initial assignment
             await websocket.send_json({
@@ -80,8 +86,9 @@ def read_root():
     return {"message": "Pen Fight Multiplayer API is running"}
 
 @app.websocket("/ws/{game_id}")
-async def websocket_endpoint(websocket: WebSocket, game_id: str):
-    await manager.connect(websocket, game_id)
+async def websocket_endpoint(websocket: WebSocket, game_id: str, pen: str = DEFAULT_PEN_TYPE):
+    pen_type = pen if pen in VALID_PEN_TYPES else DEFAULT_PEN_TYPE
+    await manager.connect(websocket, game_id, pen_type)
     try:
         while True:
             data = await websocket.receive_text()

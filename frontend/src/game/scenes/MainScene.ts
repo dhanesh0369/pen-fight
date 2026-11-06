@@ -1,13 +1,30 @@
 import Phaser from 'phaser';
+import {
+  PEN_TYPES,
+  PEN_TYPE_IDS,
+  computeShot,
+  isPenTypeId,
+  type PenStats,
+  type PenTypeId,
+} from '../pens';
+
+const PLAYER_COLORS: Record<1 | 2, { body: number; dark: number; grip: number }> = {
+  1: { body: 0x3b82f6, dark: 0x1d4ed8, grip: 0x1e3a8a },
+  2: { body: 0xef4444, dark: 0xb91c1c, grip: 0x7f1d1d },
+};
 
 export default class MainScene extends Phaser.Scene {
   private pen1!: Phaser.Physics.Matter.Image;
   private pen2!: Phaser.Physics.Matter.Image;
+  private penTypes: Record<1 | 2, PenTypeId> = { 1: 'ballpoint', 2: 'ballpoint' };
   
   private currentTurn: 1 | 2 = 1;
   private isDragging = false;
   private dragStart = new Phaser.Math.Vector2();
+  /** Where on the pen the player grabbed, as an offset along the pen axis (local space). */
+  private grabLocalX = 0;
   private dragLine!: Phaser.GameObjects.Graphics;
+  private aimText!: Phaser.GameObjects.Text;
   private isMoving = false;
   
   // Game mode & AI state
@@ -21,49 +38,90 @@ export default class MainScene extends Phaser.Scene {
   private playerNum: 1 | 2 = 1;
   private gameStarted = false;
   private isMultiplayer = false;
+  private localPenType: PenTypeId = 'ballpoint';
 
-  // Pen stats based on the spec
-  private readonly CLASSIC_PEN = {
-    mass: 0.1,
-    frictionAir: 0.03, // Surface friction in top-down matter.js
-    restitution: 0.55, // Bounce
-    launchPower: 0.005, // Matter.js forces are much smaller numbers
-  };
+  private readonly MAX_DRAG = 250;
 
   constructor() {
     super({ key: 'MainScene' });
   }
 
-  init(data: { mode?: 'single' | 'multiplayer'; roomCode?: string }) {
+  init(data: { mode?: 'single' | 'multiplayer'; roomCode?: string; penType?: PenTypeId }) {
     this.gameMode = data.mode || (data.roomCode ? 'multiplayer' : 'single');
+    this.localPenType = isPenTypeId(data.penType) ? data.penType : 'ballpoint';
+
     if (this.gameMode === 'multiplayer' && data.roomCode) {
       this.roomCode = data.roomCode;
       this.isMultiplayer = true;
+      // Real types for both slots arrive from the server; show ours in slot 1 until then.
+      this.penTypes = { 1: this.localPenType, 2: 'ballpoint' };
     } else {
       this.isMultiplayer = false;
       this.gameMode = 'single';
+      // Computer picks a random pen
+      const aiPen = PEN_TYPE_IDS[Math.floor(Math.random() * PEN_TYPE_IDS.length)];
+      this.penTypes = { 1: this.localPenType, 2: aiPen };
     }
   }
 
   preload() {
-    // Generate placeholder pen graphics
-    const graphics = this.make.graphics({ x: 0, y: 0 });
-    
-    // Pen 1 (Blue)
-    graphics.fillStyle(0x3b82f6);
-    graphics.fillRoundedRect(0, 0, 160, 24, 12); // Body
-    graphics.fillStyle(0x1d4ed8);
-    graphics.fillRoundedRect(120, 0, 40, 24, 12); // Cap
-    graphics.generateTexture('pen1', 160, 24);
-    graphics.clear();
-    
-    // Pen 2 (Red)
-    graphics.fillStyle(0xef4444);
-    graphics.fillRoundedRect(0, 0, 160, 24, 12); // Body
-    graphics.fillStyle(0xb91c1c);
-    graphics.fillRoundedRect(120, 0, 40, 24, 12); // Cap
-    graphics.generateTexture('pen2', 160, 24);
-    graphics.clear();
+    // Generate a texture for every pen type in both player colors
+    for (const id of PEN_TYPE_IDS) {
+      this.generatePenTexture(PEN_TYPES[id], 1);
+      this.generatePenTexture(PEN_TYPES[id], 2);
+    }
+  }
+
+  private penTextureKey(type: PenTypeId, player: 1 | 2) {
+    return `pen_${type}_${player}`;
+  }
+
+  private generatePenTexture(stats: PenStats, player: 1 | 2) {
+    const { length: L, width: W } = stats;
+    const c = PLAYER_COLORS[player];
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    const r = W / 2;
+    const nib = Math.round(L * 0.1);
+
+    // Nib / tip (left end, pointing along -x)
+    g.fillStyle(stats.id === 'marker' ? 0x111827 : 0xd1d5db);
+    g.fillTriangle(0, r, nib, r * 0.35, nib, W - r * 0.35);
+
+    // Body
+    g.fillStyle(c.body);
+    g.fillRoundedRect(nib - 2, 0, L - nib + 2, W, Math.min(r, 12));
+
+    // Grip section near the nib
+    g.fillStyle(c.grip, 0.9);
+    g.fillRect(nib + 4, 2, L * 0.18, W - 4);
+
+    // Cap (right end)
+    const capLen = L * 0.25;
+    g.fillStyle(c.dark);
+    g.fillRoundedRect(L - capLen, 0, capLen, W, Math.min(r, 12));
+
+    if (stats.id === 'gel') {
+      // Metallic bands for the heavy pen
+      g.fillStyle(0xe5e7eb);
+      g.fillRect(L - capLen - 6, 0, 5, W);
+      g.fillRect(nib + 4 + L * 0.18, 0, 4, W);
+      g.fillStyle(0x9ca3af);
+      g.fillRect(L - capLen + 8, r - 2, capLen - 16, 4); // clip
+    } else if (stats.id === 'ballpoint') {
+      g.fillStyle(0xffffff, 0.85);
+      g.fillRect(L - capLen + 6, r - 1.5, capLen - 12, 3); // thin clip
+    } else {
+      // Marker: chunky end cap stripe
+      g.fillStyle(0xffffff, 0.25);
+      g.fillRect(L - capLen + 4, 4, 6, W - 8);
+    }
+
+    // Highlight for a bit of depth
+    g.fillStyle(0xffffff, 0.18);
+    g.fillRect(nib + 2, 2, L - nib - 6, Math.max(2, W * 0.18));
+
+    g.generateTexture(this.penTextureKey(stats.id, player), L, W);
+    g.destroy();
   }
 
   private arenaGraphics!: Phaser.GameObjects.Graphics;
@@ -89,7 +147,7 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private connectWebSocket() {
-    this.ws = new WebSocket(`ws://localhost:8000/ws/${this.roomCode}`);
+    this.ws = new WebSocket(`ws://localhost:8000/ws/${this.roomCode}?pen=${this.localPenType}`);
     
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -97,7 +155,16 @@ export default class MainScene extends Phaser.Scene {
       if (data.type === 'init') {
         this.playerNum = data.player_num;
         console.log(`Connected as Player ${this.playerNum}`);
+        // Show our chosen pen in our actual slot while waiting
+        this.setPenType(this.playerNum, this.localPenType);
+        this.setPenType(this.playerNum === 1 ? 2 : 1, 'ballpoint');
+        this.resetGame();
+        this.turnText.setText(`Waiting for opponent... (Room: ${this.roomCode})`).setColor('#ffffff');
       } else if (data.type === 'game_start') {
+        const pens = data.state?.pens ?? {};
+        this.setPenType(1, isPenTypeId(pens['1']) ? pens['1'] : 'ballpoint');
+        this.setPenType(2, isPenTypeId(pens['2']) ? pens['2'] : 'ballpoint');
+        this.resetGame();
         this.gameStarted = true;
         this.currentTurn = 1;
         this.updateTurnText();
@@ -142,6 +209,14 @@ export default class MainScene extends Phaser.Scene {
     this.turnText = this.add.text(cx, 65, 'Player 1 (Blue)\'s Turn', { 
       fontSize: '32px', color: '#60a5fa', fontStyle: 'bold'
     }).setOrigin(0.5, 0);
+
+    // Pen name labels above each side of the desk
+    this.penLabel1 = this.add.text(80, 92, '', {
+      fontSize: '18px', color: '#93c5fd', fontStyle: 'bold'
+    }).setOrigin(0, 0);
+    this.penLabel2 = this.add.text(1320, 92, '', {
+      fontSize: '18px', color: '#fca5a5', fontStyle: 'bold'
+    }).setOrigin(1, 0);
     
     this.gameOverText = this.add.text(cx, 450 - 40, '', { 
       fontSize: '64px', color: '#ffffff', fontStyle: 'bold',
@@ -181,26 +256,60 @@ export default class MainScene extends Phaser.Scene {
     this.arenaGraphics.strokePath();
 
     // Create Pens using Matter.js
-    this.pen1 = this.matter.add.image(width / 2 - (arenaWidth / 4), arenaCenterY, 'pen1').setRectangle(160, 24);
-    this.setupPen(this.pen1);
+    this.pen1 = this.matter.add.image(width / 2 - (arenaWidth / 4), arenaCenterY, this.penTextureKey(this.penTypes[1], 1));
+    this.setPenType(1, this.penTypes[1]);
 
-    this.pen2 = this.matter.add.image(width / 2 + (arenaWidth / 4), arenaCenterY, 'pen2').setRectangle(160, 24);
-    this.setupPen(this.pen2);
+    this.pen2 = this.matter.add.image(width / 2 + (arenaWidth / 4), arenaCenterY, this.penTextureKey(this.penTypes[2], 2));
+    this.setPenType(2, this.penTypes[2]);
     this.pen2.setAngle(180);
     
     this.dragLine = this.add.graphics();
     this.dragLine.setDepth(10);
+
+    this.aimText = this.add.text(0, 0, '', {
+      fontSize: '18px', color: '#ffffff', fontStyle: 'bold',
+      backgroundColor: '#00000099', padding: { x: 8, y: 4 }
+    }).setDepth(11).setVisible(false);
   }
 
   private turnText!: Phaser.GameObjects.Text;
+  private penLabel1!: Phaser.GameObjects.Text;
+  private penLabel2!: Phaser.GameObjects.Text;
   private gameOverText!: Phaser.GameObjects.Text;
   private restartText!: Phaser.GameObjects.Text;
   private isGameOver = false;
 
-  private setupPen(pen: Phaser.Physics.Matter.Image) {
-    pen.setBounce(this.CLASSIC_PEN.restitution);
-    pen.setFrictionAir(this.CLASSIC_PEN.frictionAir);
-    pen.setMass(this.CLASSIC_PEN.mass);
+  private getPen(player: 1 | 2) {
+    return player === 1 ? this.pen1 : this.pen2;
+  }
+
+  private getStats(player: 1 | 2) {
+    return PEN_TYPES[this.penTypes[player]];
+  }
+
+  /** Swap a pen's texture and rebuild its physics body for the given pen type. */
+  private setPenType(player: 1 | 2, type: PenTypeId) {
+    this.penTypes[player] = type;
+    const pen = this.getPen(player);
+    if (!pen) return;
+
+    const stats = PEN_TYPES[type];
+    const { x, y, angle } = pen;
+
+    pen.setTexture(this.penTextureKey(type, player));
+    pen.setRectangle(stats.length, stats.width);
+    this.setupPen(pen, stats);
+    pen.setPosition(x, y);
+    pen.setAngle(angle);
+
+    const label = player === 1 ? this.penLabel1 : this.penLabel2;
+    label?.setText(stats.name);
+  }
+
+  private setupPen(pen: Phaser.Physics.Matter.Image, stats: PenStats) {
+    pen.setBounce(stats.restitution);
+    pen.setFrictionAir(stats.frictionAir);
+    pen.setMass(stats.mass);
   }
 
   private updateTurnText() {
@@ -240,6 +349,8 @@ export default class MainScene extends Phaser.Scene {
     if (this.dragLine) {
       this.dragLine.clear();
     }
+    this.aimText?.setVisible(false);
+    this.isDragging = false;
     this.isGameOver = false;
     this.isMoving = false;
     this.currentTurn = 1;
@@ -265,6 +376,15 @@ export default class MainScene extends Phaser.Scene {
     this.updateTurnText();
   }
 
+  /** Convert a world point into the pen's local frame (x = along the pen axis). */
+  private toPenLocal(pen: Phaser.Physics.Matter.Image, worldX: number, worldY: number) {
+    const dx = worldX - pen.x;
+    const dy = worldY - pen.y;
+    const cos = Math.cos(pen.rotation);
+    const sin = Math.sin(pen.rotation);
+    return { x: dx * cos + dy * sin, y: -dx * sin + dy * cos };
+  }
+
   private handlePointerDown(pointer: Phaser.Input.Pointer) {
     if (this.isGameOver) {
       this.resetGame();
@@ -283,61 +403,156 @@ export default class MainScene extends Phaser.Scene {
     // In multiplayer, only allow grabbing if it's your turn
     if (this.isMultiplayer && this.currentTurn !== this.playerNum) return;
 
-    const currentPen = this.currentTurn === 1 ? this.pen1 : this.pen2;
+    const currentPen = this.getPen(this.currentTurn);
+    const stats = this.getStats(this.currentTurn);
     
-    // Allow grabbing anywhere reasonably close to the pen
-    if (Phaser.Math.Distance.Between(pointer.x, pointer.y, currentPen.x, currentPen.y) < 100) {
+    // Grab test in the pen's local space: anywhere along its length, with a forgiving margin
+    const local = this.toPenLocal(currentPen, pointer.x, pointer.y);
+    const halfLength = stats.length / 2;
+    if (Math.abs(local.x) <= halfLength + 20 && Math.abs(local.y) <= stats.width / 2 + 35) {
       this.isDragging = true;
-      this.dragStart.set(currentPen.x, currentPen.y);
+      // Remember the point of contact along the pen axis (this drives the spin)
+      this.grabLocalX = Phaser.Math.Clamp(local.x, -halfLength, halfLength);
+      this.dragStart.set(pointer.x, pointer.y);
+      this.drawAim(pointer);
     }
+  }
+
+  /** Read the current drag as a shot: direction, power and resulting spin. */
+  private readDrag(pointer: Phaser.Input.Pointer) {
+    const dx = this.dragStart.x - pointer.x;
+    const dy = this.dragStart.y - pointer.y;
+    const rawDistance = Phaser.Math.Distance.Between(0, 0, dx, dy);
+    const distance = Math.min(rawDistance, this.MAX_DRAG);
+    const power = distance / this.MAX_DRAG;
+    const dirX = rawDistance > 0 ? dx / rawDistance : 0;
+    const dirY = rawDistance > 0 ? dy / rawDistance : 0;
+
+    const pen = this.getPen(this.currentTurn);
+    const shot = computeShot(this.getStats(this.currentTurn), pen.rotation, this.grabLocalX, dirX, dirY, power);
+    return { dirX, dirY, power, shot };
+  }
+
+  /** Contact point on the pen in world space. */
+  private contactWorldPoint(pen: Phaser.Physics.Matter.Image, localX: number) {
+    return {
+      x: pen.x + Math.cos(pen.rotation) * localX,
+      y: pen.y + Math.sin(pen.rotation) * localX,
+    };
+  }
+
+  private drawAimGraphics(
+    pen: Phaser.Physics.Matter.Image,
+    localX: number,
+    dirX: number,
+    dirY: number,
+    power: number,
+    spinAmount: number,
+    tint?: number,
+  ) {
+    const contact = this.contactWorldPoint(pen, localX);
+    const g = this.dragLine;
+    g.clear();
+
+    // Power-coloured arrow from the contact point (green -> yellow -> red)
+    const powerColor = tint ?? Phaser.Display.Color.GetColor(
+      Math.round(Phaser.Math.Linear(74, 239, power)),
+      Math.round(Phaser.Math.Linear(222, 68, power)),
+      Math.round(Phaser.Math.Linear(128, 68, power)),
+    );
+    const len = 40 + power * 220;
+    const endX = contact.x + dirX * len;
+    const endY = contact.y + dirY * len;
+
+    g.lineStyle(4, powerColor, 0.9);
+    g.beginPath();
+    g.moveTo(contact.x, contact.y);
+    g.lineTo(endX, endY);
+    g.strokePath();
+
+    // Arrow head
+    const headAngle = Math.atan2(dirY, dirX);
+    g.fillStyle(powerColor, 0.9);
+    g.fillTriangle(
+      endX + Math.cos(headAngle) * 14, endY + Math.sin(headAngle) * 14,
+      endX + Math.cos(headAngle + 2.5) * 12, endY + Math.sin(headAngle + 2.5) * 12,
+      endX + Math.cos(headAngle - 2.5) * 12, endY + Math.sin(headAngle - 2.5) * 12,
+    );
+
+    // Contact point marker
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(contact.x, contact.y, 6);
+    g.lineStyle(2, 0x000000, 0.6);
+    g.strokeCircle(contact.x, contact.y, 6);
+
+    // Spin arc around the pen center (direction + magnitude)
+    const absSpin = Math.abs(spinAmount);
+    if (absSpin > 0.05 && power > 0.05) {
+      const radius = this.getStats(this.currentTurn).length / 2 + 18;
+      const sweep = absSpin * Math.PI * 0.9;
+      const start = pen.rotation - sweep / 2;
+      const end = pen.rotation + sweep / 2;
+      const clockwise = spinAmount > 0;
+
+      g.lineStyle(3, 0xfacc15, 0.9);
+      g.beginPath();
+      g.arc(pen.x, pen.y, radius, start, end, false);
+      g.strokePath();
+
+      // Arrow head at the leading end of the arc
+      const tipAngle = clockwise ? end : start;
+      const tx = pen.x + Math.cos(tipAngle) * radius;
+      const ty = pen.y + Math.sin(tipAngle) * radius;
+      const tangent = tipAngle + (clockwise ? Math.PI / 2 : -Math.PI / 2);
+      g.fillStyle(0xfacc15, 0.9);
+      g.fillTriangle(
+        tx + Math.cos(tangent) * 12, ty + Math.sin(tangent) * 12,
+        tx + Math.cos(tangent + 2.4) * 10, ty + Math.sin(tangent + 2.4) * 10,
+        tx + Math.cos(tangent - 2.4) * 10, ty + Math.sin(tangent - 2.4) * 10,
+      );
+    }
+  }
+
+  private drawAim(pointer: Phaser.Input.Pointer) {
+    const pen = this.getPen(this.currentTurn);
+    const { dirX, dirY, power, shot } = this.readDrag(pointer);
+    this.drawAimGraphics(pen, this.grabLocalX, dirX, dirY, power, shot.spinAmount);
+
+    const spinPct = Math.round(Math.abs(shot.spinAmount) * 100);
+    const spinIcon = spinPct < 5 ? '•' : shot.spinAmount > 0 ? '⟳' : '⟲';
+    this.aimText
+      .setText(`Power ${Math.round(power * 100)}%  Spin ${spinIcon} ${spinPct}%`)
+      .setPosition(pointer.x + 18, pointer.y + 18)
+      .setVisible(true);
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer) {
     if (!this.isDragging) return;
-
-    this.dragLine.clear();
-    // Draw a trajectory aiming line opposite to drag
-    const dx = this.dragStart.x - pointer.x;
-    const dy = this.dragStart.y - pointer.y;
-
-    const currentPen = this.currentTurn === 1 ? this.pen1 : this.pen2;
-
-    this.dragLine.lineStyle(4, 0xffffff, 0.8);
-    this.dragLine.beginPath();
-    this.dragLine.moveTo(currentPen.x, currentPen.y);
-    // The line shows where the pen will shoot
-    this.dragLine.lineTo(currentPen.x + dx, currentPen.y + dy);
-    this.dragLine.strokePath();
+    this.drawAim(pointer);
   }
 
   private handlePointerUp(pointer: Phaser.Input.Pointer) {
     if (!this.isDragging) return;
     this.isDragging = false;
     this.dragLine.clear();
+    this.aimText.setVisible(false);
 
-    const dx = this.dragStart.x - pointer.x;
-    const dy = this.dragStart.y - pointer.y;
-    
-    const maxDrag = 250;
-    const distance = Math.min(Phaser.Math.Distance.Between(0, 0, dx, dy), maxDrag);
-    const power = distance / maxDrag;
+    const { power, shot } = this.readDrag(pointer);
     
     if (power > 0.05) {
-        const forceX = (dx / distance) * power * this.CLASSIC_PEN.launchPower;
-        const forceY = (dy / distance) * power * this.CLASSIC_PEN.launchPower;
-        
         const playerToShoot = this.isMultiplayer ? this.playerNum : this.currentTurn;
-        this.applyShot(forceX, forceY, playerToShoot);
+        this.applyShot(shot.forceX, shot.forceY, shot.angularVelocity, playerToShoot);
 
         // We no longer send the 'shoot' event. 
         // The active player will just continuously sync positions in update().
     }
   }
 
-  private applyShot(forceX: number, forceY: number, player: number) {
-    const currentPen = player === 1 ? this.pen1 : this.pen2;
+  private applyShot(forceX: number, forceY: number, angularVelocity: number, player: 1 | 2) {
+    const currentPen = this.getPen(player);
     currentPen.applyForce(new Phaser.Math.Vector2(forceX, forceY));
-    currentPen.setAngularVelocity((Math.random() > 0.5 ? 1 : -1) * 0.15);
+    // Spin comes from where the pen was struck (point-of-contact torque), not randomness
+    currentPen.setAngularVelocity(angularVelocity);
     this.isMoving = true;
   }
 
@@ -466,17 +681,15 @@ export default class MainScene extends Phaser.Scene {
       const distanceFactor = Phaser.Math.Clamp(dist / 550, minPower, maxPower);
       const power = distanceFactor + (Math.random() * 0.1 - 0.05);
 
-      // Visual Aiming Indicator (Computer shows its trajectory before releasing)
-      const aimDist = Math.min(dist * 0.7, 200);
-      const aimEndX = originX + Math.cos(angle) * aimDist;
-      const aimEndY = originY + Math.sin(angle) * aimDist;
+      // AI mostly flicks near the center, sometimes off-center for a bit of spin
+      const stats = this.getStats(2);
+      const contactX = (Math.random() - 0.5) * 0.7 * stats.length / 2;
+      const dirX = Math.cos(angle);
+      const dirY = Math.sin(angle);
+      const shot = computeShot(stats, this.pen2.rotation, contactX, dirX, dirY, power);
 
-      this.dragLine.clear();
-      this.dragLine.lineStyle(4, 0xf87171, 0.85); // Red aim line for AI
-      this.dragLine.beginPath();
-      this.dragLine.moveTo(originX, originY);
-      this.dragLine.lineTo(aimEndX, aimEndY);
-      this.dragLine.strokePath();
+      // Visual Aiming Indicator (Computer shows its trajectory and contact point before releasing)
+      this.drawAimGraphics(this.pen2, contactX, dirX, dirY, Math.min(power, 1), shot.spinAmount, 0xf87171);
 
       this.aiTimer = this.time.delayedCall(450, () => {
         this.dragLine.clear();
@@ -485,9 +698,7 @@ export default class MainScene extends Phaser.Scene {
 
         if (this.isGameOver || this.currentTurn !== 2) return;
 
-        const forceX = Math.cos(angle) * power * this.CLASSIC_PEN.launchPower;
-        const forceY = Math.sin(angle) * power * this.CLASSIC_PEN.launchPower;
-        this.applyShot(forceX, forceY, 2);
+        this.applyShot(shot.forceX, shot.forceY, shot.angularVelocity, 2);
       });
     });
   }

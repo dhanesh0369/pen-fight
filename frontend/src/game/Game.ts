@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import MainScene from './scenes/MainScene';
+import type { PenTypeId } from './pens';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -24,6 +25,7 @@ const config: Phaser.Types.Core.GameConfig = {
 export interface GameOptions {
   mode: 'single' | 'multiplayer';
   roomCode?: string;
+  penType?: PenTypeId;
 }
 
 let game: Phaser.Game | null = null;

@@ -204,3 +204,125 @@
 .room-input:focus {
   border-color: #3b82f6;
 }
+
+/* Pen picker */
+.lobby-card {
+  max-width: 460px;
+}
+
+.pen-picker {
+  margin: 0 0 24px 0;
+  text-align: left;
+}
+
+.pen-picker-label {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.pen-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pen-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 80px;
+  padding: 12px 6px 10px;
+  background-color: #0f172a;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pen-option:hover {
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+.pen-option.selected {
+  border-color: #3b82f6;
+  background-color: #172554;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.pen-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.pen-preview {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d1d5db 0 10%, #3b82f6 10% 75%, #1d4ed8 75% 100%);
+}
+
+.pen-preview-marker {
+  border-radius: 6px;
+  background: linear-gradient(90deg, #111827 0 10%, #3b82f6 10% 75%, #1d4ed8 75% 100%);
+}
+
+.pen-preview-gel {
+  background: linear-gradient(90deg, #d1d5db 0 10%, #1e3a8a 10% 28%, #e5e7eb 28% 31%, #3b82f6 31% 72%, #e5e7eb 72% 75%, #1d4ed8 75% 100%);
+}
+
+.pen-description {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin: 12px 0 10px;
+  min-height: 2.6em;
+}
+
+.pen-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.pen-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pen-stat-label {
+  width: 52px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.pen-stat-bar {
+  flex: 1;
+  height: 6px;
+  background-color: #334155;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.pen-stat-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.pen-tip {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 12px 0 0;
+}
