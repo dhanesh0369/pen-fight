@@ -17,6 +17,26 @@ A modern, web-based physics game inspired by the classic school classroom game *
 
 ---
 
+## 🖊️ Pens & Spin Physics
+
+Pick your pen in the lobby — each one plays differently (the computer picks a random pen):
+
+| Pen | Weight | Speed | Spin | Bounce | Style |
+|---|---|---|---|---|---|
+| **Classic Ballpoint** | ●○○○○ | ●●●●● | ●●●●● | ●●●●○ | Light & bouncy; fast flicks and wild spin, but easy to knock off |
+| **Chunky Marker** | ●●●○○ | ●●●○○ | ●●●○○ | ●●○○○ | Balanced all-rounder; grippy and stable |
+| **Heavy Metal Gel** | ●●●●● | ●●○○○ | ●○○○○ | ●○○○○ | A tank; hard to push off the desk and hits hard, but slow to spin |
+
+**Point-of-contact spin:** where you grab the pen matters. Spin follows real torque (`r × F`):
+
+- **Grab the middle** → straight push, no spin.
+- **Grab near an end and flick sideways** → maximum spin, but up to 35% of the push is lost to rotation.
+- **Flick along the pen's length** → no spin, wherever you grab.
+
+While aiming you'll see a contact-point marker, a power arrow (green → red), a yellow spin arc showing direction, and a `Power / Spin` readout. Pen stats are tunable in [`frontend/src/game/pens.ts`](frontend/src/game/pens.ts).
+
+---
+
 ## ✨ Key Technical Highlights
 
 1. **Matter.js 2D Physics Engine:**
@@ -70,21 +90,40 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
+## 🧪 Testing
+
+```bash
+# Frontend unit tests: pen stats & spin physics (Node 22.6+)
+cd frontend && npm test
+
+# Backend multiplayer tests: starts its own server on a free port
+cd backend && ./venv/bin/python tests/test_multiplayer.py
+
+# Browser end-to-end test: needs `npm run dev` running and Google Chrome installed
+cd frontend && npm run test:e2e
+# Optional env vars: BASE_URL, CHROME_PATH, SCREENSHOT_DIR
+```
+
+---
+
 ## 📂 Project Structure
 
 ```
 Pen Fight/
 ├── backend/
 │   ├── main.py              # FastAPI app, WebSocket room manager & broadcaster
-│   └── requirements.txt     # Python dependencies
+│   ├── requirements.txt     # Python dependencies
+│   └── tests/               # Multiplayer WebSocket tests
 ├── frontend/
 │   ├── src/
 │   │   ├── game/
 │   │   │   ├── Game.ts      # Phaser Game initialization & configuration
+│   │   │   ├── pens.ts      # Pen catalog & point-of-contact shot physics
 │   │   │   └── scenes/
 │   │   │       └── MainScene.ts # Matter.js arena, pen physics, AI logic, & WS sync
-│   │   ├── App.tsx          # React lobby & room manager
+│   │   ├── App.tsx          # React lobby, pen picker & room manager
 │   │   └── App.css          # UI styles & responsive layout
+│   ├── tests/               # Unit tests + browser end-to-end test (tests/e2e)
 │   └── package.json
 └── README.md
 ```

@@ -27,7 +27,7 @@ class ConnectionManager:
         # Maps game_id -> game state
         self.game_states: Dict[str, dict] = {}
 
-    async def connect(self, websocket: WebSocket, game_id: str, pen_type: str = DEFAULT_PEN_TYPE):
+    async def connect(self, websocket: WebSocket, game_id: str, pen_type: str = DEFAULT_PEN_TYPE) -> bool:
         await websocket.accept()
         if game_id not in self.active_games:
             self.active_games[game_id] = []
@@ -57,9 +57,11 @@ class ConnectionManager:
                     "type": "game_start",
                     "state": self.game_states[game_id]
                 })
+            return True
         else:
             await websocket.send_json({"type": "error", "message": "Game is full"})
             await websocket.close()
+            return False
 
     def disconnect(self, websocket: WebSocket, game_id: str):
         if game_id in self.active_games:
@@ -88,7 +90,8 @@ def read_root():
 @app.websocket("/ws/{game_id}")
 async def websocket_endpoint(websocket: WebSocket, game_id: str, pen: str = DEFAULT_PEN_TYPE):
     pen_type = pen if pen in VALID_PEN_TYPES else DEFAULT_PEN_TYPE
-    await manager.connect(websocket, game_id, pen_type)
+    if not await manager.connect(websocket, game_id, pen_type):
+        return  # Room was full; connection already closed
     try:
         while True:
             data = await websocket.receive_text()
