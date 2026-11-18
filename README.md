@@ -8,6 +8,11 @@
 
 A modern, web-based physics game inspired by the classic school classroom game **Pen Fight**. Aim your pen, unleash calculated flick shots, and push your opponent off the desk arena while staying inside the boundaries!
 
+### ▶️ Play now: **[pen-fight-kohl.vercel.app](https://pen-fight-kohl.vercel.app)**
+
+[![Deployed on Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://pen-fight-kohl.vercel.app)
+[![Backend on Render](https://img.shields.io/badge/Backend-Render-46E3B7?style=for-the-badge&logo=render&logoColor=black)](https://render.com/deploy?repo=https://github.com/dhanesh0369/pen-fight)
+
 ---
 
 ## 🎮 Game Modes
@@ -103,6 +108,27 @@ cd backend && ./venv/bin/python tests/test_multiplayer.py
 cd frontend && npm run test:e2e
 # Optional env vars: BASE_URL, CHROME_PATH, SCREENSHOT_DIR
 ```
+
+---
+
+## ☁️ Deployment
+
+| Part | Host | Why |
+|---|---|---|
+| Frontend (React + Phaser) | **Vercel** — [pen-fight-kohl.vercel.app](https://pen-fight-kohl.vercel.app) | Static Vite build on a global CDN |
+| Backend (FastAPI WebSockets) | **Render** (free web service) | Vercel's serverless functions can't hold long-lived WebSocket connections |
+
+**Backend (Render):** [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dhanesh0369/pen-fight) — uses [`render.yaml`](render.yaml) (root dir `backend`, `uvicorn main:app --host 0.0.0.0 --port $PORT`).
+
+**Frontend (Vercel):** project root directory `frontend`, framework preset Vite. Set the environment variable:
+
+```
+VITE_BACKEND_URL=https://<your-render-service>.onrender.com
+```
+
+The frontend derives the `wss://` WebSocket URL from it; without it, it falls back to `http://localhost:8000` for local development.
+
+> Render's free tier sleeps after ~15 minutes idle; the first request takes ~30–60s to wake it. The lobby pings the backend on load so it's usually awake by the time you create a room.
 
 ---
 
