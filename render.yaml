@@ -1,0 +1,15 @@
+# Render Blueprint for the multiplayer backend (FastAPI + WebSockets).
+# Deploy: https://render.com/deploy?repo=https://github.com/dhanesh0369/pen-fight
+services:
+  - type: web
+    name: pen-fight-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7

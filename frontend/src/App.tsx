@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { initGame, destroyGame } from './game/Game'
 import { PEN_TYPES, PEN_TYPE_IDS, type PenTypeId } from './game/pens'
+import { wakeBackend } from './config'
 import './App.css'
 
 const RATING_LABELS = [
@@ -20,6 +21,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('penfight.penType', penType);
   }, [penType]);
+
+  // Wake the (possibly sleeping) multiplayer server while the player is in the lobby
+  useEffect(() => {
+    wakeBackend();
+  }, []);
   const [gameState, setGameState] = useState<'lobby' | 'playing'>('lobby');
   const [gameMode, setGameMode] = useState<'single' | 'multiplayer'>('single');
   const [roomCode, setRoomCode] = useState('');

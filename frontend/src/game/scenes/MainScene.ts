@@ -7,6 +7,7 @@ import {
   type PenStats,
   type PenTypeId,
 } from '../pens';
+import { BACKEND_WS_URL } from '../../config';
 
 const PLAYER_COLORS: Record<1 | 2, { body: number; dark: number; grip: number }> = {
   1: { body: 0x3b82f6, dark: 0x1d4ed8, grip: 0x1e3a8a },
@@ -39,6 +40,7 @@ export default class MainScene extends Phaser.Scene {
   private gameStarted = false;
   private isMultiplayer = false;
   private localPenType: PenTypeId = 'ballpoint';
+  private everConnected = false;
 
   private readonly MAX_DRAG = 250;
 
@@ -136,6 +138,10 @@ export default class MainScene extends Phaser.Scene {
     this.input.on('pointermove', this.handlePointerMove, this);
     this.input.on('pointerup', this.handlePointerUp, this);
 
+    // Phaser doesn't call shutdown() automatically; make sure sockets/timers are cleaned up
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
+
     if (this.isMultiplayer) {
       this.connectWebSocket();
       this.turnText.setText(`Waiting for opponent... (Room: ${this.roomCode})`).setColor('#ffffff');
@@ -147,11 +153,36 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private connectWebSocket() {
-    this.ws = new WebSocket(`ws://localhost:8000/ws/${this.roomCode}?pen=${this.localPenType}`);
+    this.ws = new WebSocket(`${BACKEND_WS_URL}/ws/${this.roomCode}?pen=${this.localPenType}`);
+
+    this.ws.onclose = () => {
+      if (this.isGameOver) return;
+      this.gameStarted = false;
+      this.turnText
+        .setText(this.everConnected ? 'Connection lost. Go back to the menu to rejoin.' : 'Can\'t reach the game server. Try again in a minute.')
+        .setColor('#fbbf24');
+    };
+    this.ws.onopen = () => {
+      this.everConnected = true;
+    };
     
     this.ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       
+      if (data.type === 'error') {
+        this.everConnected = false;
+        this.ws?.close();
+        this.turnText.setText(data.message || 'Could not join the room').setColor('#fbbf24');
+        return;
+      }
+
+      if (data.type === 'player_left') {
+        this.gameStarted = false;
+        this.isMoving = false;
+        this.turnText.setText('Opponent left the game.').setColor('#fbbf24');
+        return;
+      }
+
       if (data.type === 'init') {
         this.playerNum = data.player_num;
         console.log(`Connected as Player ${this.playerNum}`);
@@ -720,6 +751,8 @@ export default class MainScene extends Phaser.Scene {
       this.aiTimer = null;
     }
     if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onmessage = null;
       this.ws.close();
       this.ws = null;
     }
